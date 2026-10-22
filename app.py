@@ -4,11 +4,9 @@ from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
-# =======================================================
-# CONFIGURATION DU CERVEAU DE NIMBA (SÉCURISÉ)
-# =======================================================
-# La clé sera lue directement depuis le coffre-fort Render :
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Nettoyage automatique de la clé d'API (supprime les espaces et guillemets)
+raw_key = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = raw_key.strip().replace('"', '').replace("'", "")
 
 SYSTEM_PROMPT = """
 Tu es NIMBA AI, la première Intelligence Artificielle éducative, technique et patriotique de la République de Guinée (Conakry).
@@ -224,32 +222,35 @@ def chat():
         return jsonify({"reply": "Pose-moi une question, je suis là pour toi !"})
 
     if not GEMINI_API_KEY:
-        return jsonify({"reply": "⚠️ La clé d'intelligence n'a pas encore été configurée dans le serveur."})
+        return jsonify({"reply": "⚠️ La clé d'intelligence n'est pas encore enregistrée dans Render."})
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Liste des modèles Google testés dans l'ordre pour garantir une réponse sans erreur 404
+    modeles = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
     
+    texte_complet = f"{SYSTEM_PROMPT}\n\nQUESTION DE L'UTILISATEUR GUINÉEN :\n{message_utilisateur}"
     payload = {
-        "system_instruction": {
-            "parts": [{"text": SYSTEM_PROMPT}]
-        },
         "contents": [
             {
-                "parts": [{"text": message_utilisateur}]
+                "parts": [{"text": texte_complet}]
             }
         ]
     }
 
-    try:
-        response = requests.post(url, json=payload, timeout=20)
-        if response.status_code == 200:
-            resultat = response.json()
-            texte_brut = resultat["candidates"][0]["content"]["parts"][0]["text"]
-            texte_formate = texte_brut.replace("\n", "<br>").replace("**", "<b>").replace("*", "•")
-            return jsonify({"reply": texte_formate})
-        else:
-            return jsonify({"reply": f"⚠️ Erreur de communication ({response.status_code})."})
-    except Exception as e:
-        return jsonify({"reply": f"⚠️ Erreur de connexion au cerveau : {str(e)[:100]}"})
+    dernier_code = 0
+    for modele in modeles:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modele}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            response = requests.post(url, json=payload, timeout=20)
+            dernier_code = response.status_code
+            if response.status_code == 200:
+                resultat = response.json()
+                texte_brut = resultat["candidates"][0]["content"]["parts"][0]["text"]
+                texte_formate = texte_brut.replace("\n", "<br>").replace("**", "<b>").replace("*", "•")
+                return jsonify({"reply": texte_formate})
+        except Exception:
+            continue
+
+    return jsonify({"reply": f"⚠️ Connexion au cerveau en cours de validation (Code {dernier_code}). Réessaie dans quelques secondes !"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
