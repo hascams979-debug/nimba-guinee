@@ -5,7 +5,7 @@ app = Flask(__name__)
 KEY = os.environ.get("GEMINI_API_KEY", "").strip().replace('"', '').replace("'", "")
 
 SYSTEM = """Tu es NIMBA AI, l'IA éducative et patriotique de Guinée (Conakry).
-Symbolisée par le masque Nimba (sagesse, travail et générosité). Devise : Travail - Justice - Solidarité.
+Symbole : masque Nimba (sagesse, travail et générosité). Devise : Travail - Justice - Solidarité.
 Tes missions sacrées :
 1. TUTEUR SCOLAIRE : Explique simplement et clairement les cours (Maths, Physique, Français, Philo, etc.).
 2. ÉCOLES PROFESSIONNELLES (CFP / Métiers) : Guide pratique pour la mécanique auto/engins, électricité bâtiment, chantiers/béton, santé communautaire, agronomie. Donne diagnostics de pannes et dosages.
@@ -99,31 +99,23 @@ def chat():
     if not user_msg:
         return jsonify({"reply": "Pose-moi une question !"})
     if not KEY:
-        return jsonify({"reply": "⚠️ Clé API manquante dans Render."})
+        return jsonify({"reply": "⚠️ Clé API introuvable dans Render."})
 
-    # Liste des modèles officiels grand public actifs en 2025
-    candidats = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",
-        "gemini-1.5-pro"
-    ]
-    
-    prompt = f"{SYSTEM}\n\nQUESTION DE L'UTILISATEUR GUINÉEN :\n{user_msg}"
+    # Appel direct au modèle officiel Google standard
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={KEY}"
+    headers = {"Content-Type": "application/json"}
+    prompt = f"{SYSTEM}\n\nQUESTION DE L'ÉLÈVE GUINÉEN :\n{user_msg}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-    for mod in candidats:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={KEY}"
-        try:
-            r = requests.post(url, json=payload, timeout=18)
-            if r.status_code == 200:
-                data = r.json()
-                texte = data["candidates"][0]["content"]["parts"][0]["text"]
-                return jsonify({"reply": texte.replace("\n", "<br>").replace("**", "<b>")})
-        except Exception:
-            continue
-
-    return jsonify({"reply": "⚠️ Les serveurs Google sont en cours de mise à jour. Réessaie dans un instant !"})
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=20)
+        if r.status_code == 200:
+            txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return jsonify({"reply": txt.replace("\n", "<br>").replace("**", "<b>")})
+        else:
+            return jsonify({"reply": f"🔍 DÉTAIL GOOGLE ({r.status_code}) : {r.text[:200]}"})
+    except Exception as e:
+        return jsonify({"reply": f"⚠️ Erreur réseau : {str(e)[:150]}"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
