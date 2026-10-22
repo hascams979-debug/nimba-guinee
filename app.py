@@ -8,9 +8,9 @@ SYSTEM = """Tu es NIMBA AI, l'IA éducative et patriotique de Guinée (Conakry).
 Symbole : masque Nimba. Devise : Travail - Justice - Solidarité.
 Missions :
 1. Tuteur scolaire (Collège, Lycée, Université).
-2. Écoles Professionnelles (CFP / Métiers) : Mécanique auto/engins, Électricité, Chantiers/Béton, Santé communautaire. Diagnostic de pannes et dosages.
+2. CFP & Écoles Professionnelles : Mécanique auto/engins, Électricité, Chantiers/Béton, Santé communautaire. Diagnostic de pannes et dosages.
 3. Histoire de Guinée (28 sept 1958, régions, Simandou).
-Style : Grand frère guinéen bienveillant et clair. Salue chaleureusement si on te parle en langues locales."""
+Style : Grand frère guinéen bienveillant, clair et encourageant. Salue chaleureusement si on te parle en langues locales."""
 
 HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>NIMBA AI 🇬🇳</title>
@@ -101,36 +101,42 @@ def chat():
     if not KEY:
         return jsonify({"reply": "⚠️ Clé API manquante dans Render."})
 
-    # Trousseau de modèles Google testés dans l'ordre
-    modeles = [
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash",
-        "gemini-2.0-flash",
-        "gemini-pro"
-    ]
-    
-    prompt_combine = f"{SYSTEM}\n\nQUESTION DE L'UTILISATEUR GUINÉEN :\n{user_msg}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt_combine}]}]
-    }
+    try:
+        # 1. Demande automatique à Google des modèles actifs pour ta clé
+        m_res = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", timeout=10)
+        if m_res.status_code != 200:
+            return jsonify({"reply": f"⚠️ Clé refusée par Google ({m_res.status_code}) : {m_res.text[:150]}"})
 
-    dernier_code = 0
-    dernier_texte = ""
+        liste = m_res.json().get("models", [])
+        modele_choisi = None
 
-    for mod in modeles:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={KEY}"
-        try:
-            r = requests.post(url, json=payload, timeout=20)
-            dernier_code = r.status_code
-            dernier_texte = r.text
-            if r.status_code == 200:
-                txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                return jsonify({"reply": txt.replace("\n", "<br>").replace("**", "<b>")})
-        except Exception:
-            continue
+        # Cherche le meilleur modèle moderne (flash ou compatible generateContent)
+        for m in liste:
+            nom = m.get("name", "")
+            methodes = m.get("supportedGenerationMethods", [])
+            if "generateContent" in methodes:
+                if "flash" in nom:
+                    modele_choisi = nom
+                    break
+                elif not modele_choisi:
+                    modele_choisi = nom
 
-    # Si aucun n'a répondu 200, on affiche le détail exact pour comprendre
-    return jsonify({"reply": f"⚠️ Google Code {dernier_code} : {dernier_texte[:150]}"})
+        if not modele_choisi:
+            return jsonify({"reply": "⚠️ Aucun modèle d'intelligence actif sur ce compte Google."})
+
+        # 2. Appel au modèle officiel validé par Google
+        url = f"https://generativelanguage.googleapis.com/v1beta/{modele_choisi}:generateContent?key={KEY}"
+        prompt_combine = f"{SYSTEM}\n\nQUESTION DE L'UTILISATEUR GUINÉEN :\n{user_msg}"
+        payload = {"contents": [{"parts": [{"text": prompt_combine}]}]}
+
+        r = requests.post(url, json=payload, timeout=20)
+        if r.status_code == 200:
+            txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return jsonify({"reply": txt.replace("\n", "<br>").replace("**", "<b>")})
+        else:
+            return jsonify({"reply": f"⚠️ Erreur {modele_choisi} ({r.status_code}) : {r.text[:150]}"})
+    except Exception as e:
+        return jsonify({"reply": f"⚠️ Erreur technique : {str(e)[:150]}"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
